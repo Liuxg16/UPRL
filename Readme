@@ -1,0 +1,1 @@
+python3 source/run.py --data_path data/input/input.txt --exps_dir test --hidden_size 100 --batch_size 2

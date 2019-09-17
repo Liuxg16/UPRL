@@ -1,0 +1,1 @@
+python3 uprl-source/run.py --data_path data/input/input.txt --exps_dir test

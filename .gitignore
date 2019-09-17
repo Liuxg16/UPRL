@@ -1,0 +1,6 @@
+data
+POS
+*.log
+*.txt
+*.pyc
+*.pkl
