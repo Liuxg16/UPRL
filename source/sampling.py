@@ -1078,18 +1078,16 @@ def sa_single(input, sequence_length, sta_vec, id2sen, emb_word, forwardmodel, b
         pos += 1
     return ' '.join(id2sen(input[0])),V_old
 
-def simulatedAnnealing_batch(option, dataclass):
+def simulatedAnnealing_batch(option, dataclass, forwardmodel = None):
     option = option
     similarityfun = similarity_keyword_bleu_tensor
 
     device = torch.device("cuda" if torch.cuda.is_available() and not option.no_cuda else "cpu")
-    if option.mcmc=='sa': 
-        agent = UPRL(option)
-        agent.to(device)
+    agent = UPRL(option)
+    agent.to(device)
     if option.uprl_path is not None:
         with open(option.uprl_path, 'rb') as f:
             agent.load_state_dict(torch.load(f))
-            print('xxx')
 
     fileobj = open(option.emb_path,'r')
     emb_word,emb_id=pkl.load(StrToBytes(fileobj), encoding='latin1')
@@ -1100,10 +1098,11 @@ def simulatedAnnealing_batch(option, dataclass):
     use_data, sta_vec_list = read_data_use(option, dataclass.sen2id)
     id2sen = dataclass.id2sen
     generateset = []
-    optimizer = optim.Adadelta(agent.parameters(),lr = 0.1)
+    optimizer = optim.Adadelta(agent.parameters(),lr = 1)
    
     batch_size = option.batch_size
     maxvalue = 0
+    avg_rewards = []
     for i in range(0,1000000):
         sen_id = i% (use_data.length//batch_size)
         sta_vec=sta_vec_list[sen_id*batch_size:sen_id*batch_size+batch_size]
@@ -1124,7 +1123,7 @@ def simulatedAnnealing_batch(option, dataclass):
         poskeys = poskeys.view(option.repeat_size*batch_size,-1).to(device)
         sequence_length = sequence_length.view(option.repeat_size*batch_size,-1).to(device)
 
-        loss, rewards, st = agent(input, poskeys, sequence_length) # bs,15; bs,steps
+        loss, rewards, st = agent(input, poskeys, sequence_length, forwardmodel) # bs,15; bs,steps
         if i%50==0 and rewards.mean().item()>maxvalue:
             maxvalue = rewards.mean().item()
             with open('modelbest.pkl', 'wb') as f:
@@ -1134,6 +1133,7 @@ def simulatedAnnealing_batch(option, dataclass):
             st = st.view(option.repeat_size,batch_size, -1)
             rewards = rewards.view(option.repeat_size, batch_size)
             print(' '.join(id2sen(inp[1])))
+            print(inp[1])
             print('key words ', sta_vec[1])
             print('generated:  '+' '.join(id2sen(st.cpu().numpy()[2,1])))
             print(rewards.cpu().numpy()[2,1])
@@ -1147,9 +1147,13 @@ def simulatedAnnealing_batch(option, dataclass):
         #print('generated:  '+' '.join(id2sen(st.cpu().numpy()[3,1])))
         #print(rewards[3,1])
         loss = torch.mean(loss)
+        a_rewards =  torch.mean(rewards).item()
+        avg_rewards.append(a_rewards)
         if i % 50 != 0:
             loss.backward()
             torch.nn.utils.clip_grad_norm(agent.parameters(), 5)
             optimizer.step()
-        avg_rewards =  torch.mean(rewards)
-        print('sentences: {}, avg reward {}, loss {}'.format(i, avg_rewards,loss.item()))
+            print('sentences: {}, avg reward {}, loss {}'.format(i, a_rewards,loss.item()))
+        else:
+            print('average: {}, avg reward {}, loss {}'.format(i, np.mean(avg_rewards),loss.item()))
+            avg_rewards = []

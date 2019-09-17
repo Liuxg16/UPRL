@@ -1,1 +1,12 @@
 python3 source/run.py --data_path data/input/input.txt --exps_dir test --hidden_size 100 --batch_size 2
+
+
+
+
+
+# train language model
+nohup python3 source/run.py --data_path data/quoradata/quora-all.txt  --batch_size 512  --mode lm   --exps_dir exps --exp_name lm  &
+
+# train RL
+python3 source/run.py --data_path data/input/input.txt  --batch_size 10 --mode rl --exps_dir exps --exp_name test
+

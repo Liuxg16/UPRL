@@ -12,7 +12,7 @@ def main():
     parser = argparse.ArgumentParser(description="Experiment setup")
     # misc
     parser.add_argument('--seed', default=33, type=int)
-    parser.add_argument('--gpu', default="3", type=str)
+    parser.add_argument('--gpu', default="2", type=str)
     parser.add_argument('--no_train', default=False, action="store_true")
     parser.add_argument('--exps_dir', default=None, type=str)
     parser.add_argument('--exp_name', default=None, type=str)
@@ -27,7 +27,7 @@ def main():
     parser.add_argument('--keyword_pos', default=True, action="store_false")
     # model architecture
     parser.add_argument('--num_steps', default=15, type=int)
-    parser.add_argument('--num_layers', default=1, type=int)
+    parser.add_argument('--num_layers', default=2, type=int)
     parser.add_argument('--emb_size', default=300, type=int)
     parser.add_argument('--hidden_size', default=300, type=int)
     parser.add_argument('--dropout', default=0.0, type=float)
@@ -45,7 +45,7 @@ def main():
 
     # evaluation
     parser.add_argument('--sim', default='word_max', type=str)
-    parser.add_argument('--mode', default='sa', type=str)
+    parser.add_argument('--mode', default='rl', type=str)
     parser.add_argument('--accuracy', default=False, action="store_true")
     parser.add_argument('--top_k', default=10, type=int)
     parser.add_argument('--accumulate_step', default=1, type=int)
@@ -53,7 +53,7 @@ def main():
     parser.add_argument('--forward_path', default=None, type=str)
     parser.add_argument('--uprl_path', default=None, type=str)
 
-    # sampling
+    # language model
     parser.add_argument('--mcmc', default='sa', type=str)
     parser.add_argument('--use_data_path', default='data/input/input.txt', type=str)
     parser.add_argument('--reference_path', default=None, type=str)
@@ -108,34 +108,32 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() and not option.no_cuda else "cpu")
     n_gpu = torch.cuda.device_count()
 
-    if option.model == 0:
-        learner = RNNModel(option)
-    elif option.model == 1:
-        learner = PredictingModel(option)
-
-
+    learner = RNNModel(option)
     learner.to(device)
 
     if option.load is  not None: 
         with open(option.load, 'rb') as f:
             learner.load_state_dict(torch.load(f))
 
-    forwardmodel = RNNModel(option).cuda()
-    if option.mcmc=='predicting':
-        backwardmodel = PredictingModel(option).cuda()
-    else:
+    if option.mode=='lm':
+        experiment = Experiment(option, learner=learner, data=dataclass)
+        print("Experiment created.")
+        if option.pretrain:
+            experiment.init_embedding(option.emb_path)
+        print("Start training...")
+        experiment.train()
+    elif option.mode == 'rl':
+        forwardmodel = RNNModel(option).cuda()
         backwardmodel = RNNModel(option).cuda()
-    if option.forward_path is  not None: 
-        with open(option.forward_path, 'rb') as f:
-            forwardmodel.load_state_dict(torch.load(f))
+        if option.forward_path is  not None: 
+            with open(option.forward_path, 'rb') as f:
+                forwardmodel.load_state_dict(torch.load(f))
 
-    if option.backward_path is  not None: 
-        with open(option.backward_path, 'rb') as f:
-            backwardmodel.load_state_dict(torch.load(f))
-    simulatedAnnealing_batch(option, dataclass)
-
-
-    print("="*36 + "Finish" + "="*36)
+        if option.backward_path is  not None: 
+            with open(option.backward_path, 'rb') as f:
+                backwardmodel.load_state_dict(torch.load(f))
+        simulatedAnnealing_batch(option, dataclass, forwardmodel)
+        print("="*36 + "Finish" + "="*36)
 
 if __name__ == "__main__":
     main()
