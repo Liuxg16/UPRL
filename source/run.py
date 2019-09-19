@@ -5,7 +5,7 @@ import argparse, torch,data
 from utils import Option
 from models import RNNModel, PredictingModel
 from experiment import Experiment
-from sampling import simulatedAnnealing_batch
+from sampling import simulatedAnnealing_batch, testing
 
 def main():
 
@@ -134,6 +134,19 @@ def main():
                 backwardmodel.load_state_dict(torch.load(f))
         simulatedAnnealing_batch(option, dataclass, forwardmodel)
         print("="*36 + "Finish" + "="*36)
+    elif option.mode == 'rl-test':
+        forwardmodel = RNNModel(option).cuda()
+        backwardmodel = RNNModel(option).cuda()
+        if option.forward_path is  not None: 
+            with open(option.forward_path, 'rb') as f:
+                forwardmodel.load_state_dict(torch.load(f))
+
+        if option.backward_path is  not None: 
+            with open(option.backward_path, 'rb') as f:
+                backwardmodel.load_state_dict(torch.load(f))
+        testing(option, dataclass, forwardmodel)
+        print("="*36 + "Finish" + "="*36)
+
 
 if __name__ == "__main__":
     main()

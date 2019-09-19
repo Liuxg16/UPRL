@@ -311,7 +311,7 @@ class UPRL(nn.Module):
         rnn_type = 'LSTM'
         self.option = option
         dropout = option.dropout
-        self.prate = 0.05
+        self.prate = 0.1
         self.vocab_size = option.vocab_size
         ninp = option.emb_size
         nhid = option.hidden_size
@@ -323,7 +323,7 @@ class UPRL(nn.Module):
                 bidirectional=True )
 
         self.repeat_size = option.repeat_size
-        self.num_actions = self.vocab_size+1
+        self.num_actions = 2*self.vocab_size+2
         self.decoder = nn.Linear(2*nhid+1, self.num_actions)
         self.nhid = nhid
         self.device = torch.device("cuda" if torch.cuda.is_available() and not self.option.no_cuda else "cpu")
@@ -351,47 +351,66 @@ class UPRL(nn.Module):
 
         for i in range(N_step): 
             pos = i% self.length
-            st,pi, action = self.step(st, emb0, key_pos, pos, length_t,c0,h0)
+            st,pi, action, length_t = self.step(st, emb0, key_pos, pos, length_t,c0,h0)
             pis[:,i:i+1] = pi
             actions[:,i:i+1] = action
 
-        step_reward = torch.sum(torch.eq(actions, self.vocab_size).float(),1) * 0.01
-        reward  = self.f(st,s0, key_pos, forwardmodel)  + step_reward
+        step_reward = torch.sum(torch.eq(actions, 2*self.vocab_size+1).float(),1) * 0.01 # hold
+        fv, sim, div, flu  = self.f(st,s0, key_pos, forwardmodel, length_t)
+        reward = fv + step_reward
         reward = reward.detach() # bs,1
         reward =  reward.view(self.repeat_size, -1) 
         reward_adjust = nn.ReLU()(reward- torch.mean(reward,0, keepdim = True)) #rep,k
         
-        sum_pi = torch.sum(-torch.log(torch.clamp(pis,1e-50)),1, keepdim = True) # bs,1
+        sum_pi = torch.sum(-torch.log(torch.clamp(pis,1e-10,1-1e-10)),1, keepdim = True) # bs,1
         loss = sum_pi*(reward_adjust.view(-1,1)) # bs,1
-        return loss, reward, st
+        return loss, reward, st, flu.detach()
 
     def step(self, s_t_1, emb0, key_pos, pos, length_t,c0,h0):
         # bs,L; bs,l, emb; bs,l; int;
         pos_tensor = torch.zeros(self.batch_size,self.length,1).to(self.device)
         pos_tensor[:,pos,:] = 1
         embt = self.embedding(s_t_1)
+        embt[:,pos,:] = embt[:,pos,:]*0
         emb = torch.cat([embt,emb0, pos_tensor],2)
         output, hidden = self.rnn(emb, (c0,h0)) # batch, length,2h
-        pooled = nn.MaxPool1d(self.length)(output.permute(0,2,1)) #batch,2h
-        representation = torch.cat([pooled.squeeze(2),key_pos[:,pos:pos+1]],1)
+        #pooled = nn.MaxPool1d(self.length)(output.permute(0,2,1)).squeeze(2) #batch,2h
+        pooled = output[:,pos,:]
+        representation = torch.cat([pooled,key_pos[:,pos:pos+1]],1)
         decoded = nn.Softmax(1)(self.decoder(representation)) # bs,V
 
         if self.training:
             action = decoded.multinomial(1)
             explorate_flag = self.switch_m.multinomial(1)  # as edge_predict
             action_explorate = self.action_m.multinomial(1)
-            action = action*explorate_flag + action_explorate*(1-explorate_flag)
+            action1 = action*explorate_flag + action_explorate*(1-explorate_flag)
         else: 
-            values,action = torch.max(decoded,1, keepdim=True)
+            values,action1 = torch.max(decoded,1, keepdim=True)
+        action = action1.detach()
         pi = torch.gather(decoded, 1, action) # (b_s,1), \pi for i,j
         
         replaceflag = torch.lt(action,self.vocab_size).long()
-        st = torch.clone(s_t_1)
-        st[:,pos:pos+1] = action*replaceflag +  (1-replaceflag)*s_t_1[:,pos:pos+1]
+        insertflag = torch.ge(action,self.vocab_size) * torch.lt(action, 2*self.vocab_size)
+        insertflag = (insertflag  * torch.le(length_t+insertflag.long(),15)).long()
+        deleteflag = torch.eq(action,2*self.vocab_size)
+        deleteflag = (deleteflag * torch.gt(length_t-deleteflag.long(),2)).long()
 
-        return st, pi, action
+        holdflag = 1- replaceflag -insertflag - deleteflag
+
+        rep = torch.cat([action, s_t_1[:,pos+1:]],1)
+        ins = torch.cat([action%self.vocab_size, s_t_1[:,pos:-1]],1)
+        padding = torch.ones(self.batch_size,1, device = ins.device, dtype = torch.long)*30001
+        dele = torch.cat([s_t_1[:,pos+1:], padding],1)
+
+        hol = s_t_1[:,pos:]
+        st = torch.clone(s_t_1)
+        st[:,pos:] =  (rep* replaceflag) + (ins * insertflag) +(dele*deleteflag )+ (hol * holdflag)
+
+        length_tt = insertflag+length_t-deleteflag
+
+        return st, pi, action, length_tt
     
-    def f(self, st,s0, key_pos, forwardmodel=None):
+    def f(self, st,s0, key_pos, forwardmodel=None, sequence_length =None):
         # bs,l; bs,l; bs, l
         e=1e-50
         M_kw=2
@@ -415,12 +434,15 @@ class UPRL(nn.Module):
 
         if forwardmodel is not None:
             prod_prob = forwardmodel.prod_prob(st).squeeze(2) # bs,l, 1
-            fluency = torch.sum(torch.log(torch.clamp(prod_prob,1e-50)),1)
-            fluencyflag = torch.gt(fluency,-8).float()
-            res = sim * expression_diversity*(fluencyflag + (1-fluencyflag)*0.1)
+            fluency =\
+                    -torch.sum(torch.log(torch.clamp(prod_prob,1e-50)),1)/sequence_length.squeeze(1).float()
+            fluency = torch.clamp(fluency, 0,100) 
+            fluencyflag = torch.lt(fluency,5).float()
+            res = sim * expression_diversity * fluencyflag *((1/fluency)) +\
+                     sim * expression_diversity * (1-fluencyflag)*0.01
         else:
             res = sim * expression_diversity
-        return res
+        return res, sim, expression_diversity, fluency
 
 
     def init_hidden(self, bsz):

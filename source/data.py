@@ -51,6 +51,7 @@ class Dicts(object):
             return [self.id2sen(x) for x in s]
 
 class Data(object):
+
     def __init__(self, option):
         self.option = option
         dict_use = Dicts(option.dict_path)

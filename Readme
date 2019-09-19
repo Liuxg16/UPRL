@@ -8,5 +8,7 @@ python3 source/run.py --data_path data/input/input.txt --exps_dir test --hidden_
 nohup python3 source/run.py --data_path data/quoradata/quora-all.txt  --batch_size 512  --mode lm   --exps_dir exps --exp_name lm  &
 
 # train RL
-python3 source/run.py --data_path data/input/input.txt  --batch_size 10 --mode rl --exps_dir exps --exp_name test
+nohup  python3 source/run.py --data_path data/input/input.txt  --batch_size 30   --mode rl --exps_dir exps --exp_name test   --gpu 1 --forward_path exps/lm/ckpt/model-best.pkl  >log.log   &
 
+# test RL
+python3 source/run.py --data_path data/input/input.txt --batch_size 4 --mode rl-test --exps_dir exps --exp_name test --gpu 0 --forward_path exps/lm/ckpt/model-best.pkl --uprl_path modelbest.pkl
