@@ -1137,6 +1137,7 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None):
             print(inp[1])
             print('key words ', sta_vec[1])
             print('generated:  '+' '.join(id2sen(st.cpu().numpy()[2,1])))
+            print('generated:  ', st.cpu().numpy()[2,1])
             print(rewards.cpu().numpy()[2,1])
             print(temp.cpu().numpy()[2,1])
             
@@ -1144,6 +1145,7 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None):
             print(' '.join(id2sen(inp[3])))
             print('key words ', sta_vec[3])
             print('generated:  '+' '.join(id2sen(st.cpu().numpy()[2,3])))
+            print('generated:  ', st.cpu().numpy()[2,3])
             print(rewards.cpu().numpy()[2,3])
 
 
@@ -1210,9 +1212,12 @@ def testing(option, dataclass, forwardmodel = None):
         rewards = rewards.view(option.repeat_size, batch_size)
         temp = temp.view(option.repeat_size, batch_size).detach()
         print(' '.join(id2sen(inp[1])))
+        print(inp[1])
+        print('length ', sequence_length[1])
         print('key words ', sta_vec[1])
         print('generated:  '+' '.join(id2sen(st.cpu().numpy()[2,1])))
-        print(rewards.cpu().numpy()[2,1])
+        print('generated:  ', st.cpu().numpy()[2,1])
+        print('reward', rewards.cpu().numpy()[2,1])
         print(temp.cpu().numpy()[2,1])
             
             

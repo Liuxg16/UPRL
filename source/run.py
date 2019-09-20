@@ -22,7 +22,7 @@ def main():
     parser.add_argument('--data_path', default='data/quora/quora.txt', type=str)
     parser.add_argument('--dict_path', default='data/quora/dict.pkl', type=str)
     parser.add_argument('--dict_size', default=30000, type=int)
-    parser.add_argument('--vocab_size', default=30003, type=int)
+    parser.add_argument('--vocab_size', default=30004, type=int)
     parser.add_argument('--backward', default=False, action="store_true")
     parser.add_argument('--keyword_pos', default=True, action="store_false")
     # model architecture

@@ -40,6 +40,7 @@ class RNNModel(nn.Module):
 		bs,15; bs,15
 		'''
 		batch_size = input.size(0)
+		print(input[0], target[0])
 		length = input.size(1)
 		target = target.view(-1)
 		emb = self.drop(self.encoder(input))
@@ -310,8 +311,9 @@ class UPRL(nn.Module):
         super(UPRL, self).__init__()
         rnn_type = 'LSTM'
         self.option = option
+        self.length = 15
         dropout = option.dropout
-        self.prate = 0.1
+        self.prate = 0.15
         self.vocab_size = option.vocab_size
         ninp = option.emb_size
         nhid = option.hidden_size
@@ -324,7 +326,7 @@ class UPRL(nn.Module):
 
         self.repeat_size = option.repeat_size
         self.num_actions = 2*self.vocab_size+2
-        self.decoder = nn.Linear(2*nhid+1, self.num_actions)
+        self.decoder = nn.Linear(2*nhid+1+self.length, self.num_actions)
         self.nhid = nhid
         self.device = torch.device("cuda" if torch.cuda.is_available() and not self.option.no_cuda else "cpu")
 
@@ -333,7 +335,6 @@ class UPRL(nn.Module):
         bs,15; bs,14
         '''
 
-        self.length = 15
         N_step = 15
         self.batch_size = input.size(0)
         st = input.clone()
@@ -351,13 +352,15 @@ class UPRL(nn.Module):
 
         for i in range(N_step): 
             pos = i% self.length
-            st,pi, action, length_t = self.step(st, emb0, key_pos, pos, length_t,c0,h0)
+            st,pi, action, length_t , re= self.step(st, emb0, key_pos, pos, length_t,c0,h0)
             pis[:,i:i+1] = pi
-            actions[:,i:i+1] = action
+            actions[:,i:i+1] = re
 
         step_reward = torch.sum(torch.eq(actions, 2*self.vocab_size+1).float(),1) * 0.01 # hold
         fv, sim, div, flu  = self.f(st,s0, key_pos, forwardmodel, length_t)
         reward = fv + step_reward
+
+        reward = torch.sum(actions,1)*0.1
         reward = reward.detach() # bs,1
         reward =  reward.view(self.repeat_size, -1) 
         reward_adjust = nn.ReLU()(reward- torch.mean(reward,0, keepdim = True)) #rep,k
@@ -376,7 +379,7 @@ class UPRL(nn.Module):
         output, hidden = self.rnn(emb, (c0,h0)) # batch, length,2h
         #pooled = nn.MaxPool1d(self.length)(output.permute(0,2,1)).squeeze(2) #batch,2h
         pooled = output[:,pos,:]
-        representation = torch.cat([pooled,key_pos[:,pos:pos+1]],1)
+        representation = torch.cat([pooled,key_pos[:,pos:pos+1], pos_tensor.squeeze(2)],1)
         decoded = nn.Softmax(1)(self.decoder(representation)) # bs,V
 
         if self.training:
@@ -405,10 +408,10 @@ class UPRL(nn.Module):
         hol = s_t_1[:,pos:]
         st = torch.clone(s_t_1)
         st[:,pos:] =  (rep* replaceflag) + (ins * insertflag) +(dele*deleteflag )+ (hol * holdflag)
-
         length_tt = insertflag+length_t-deleteflag
 
-        return st, pi, action, length_tt
+        re = torch.eq(action,pos+2).long()
+        return st, pi, action, length_tt, re
     
     def f(self, st,s0, key_pos, forwardmodel=None, sequence_length =None):
         # bs,l; bs,l; bs, l

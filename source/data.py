@@ -11,10 +11,11 @@ class Dicts(object):
         f = open(dict_path,'rb')
         self.Dict1, self.Dict2=pkl.load(f, encoding = 'latin1')
         f.close()
-        self.vocab_size=len(self.Dict1)+3
-        self.UNK=self.vocab_size-3
-        self.BOS=self.vocab_size-1
+        self.vocab_size=len(self.Dict1)+4
+        self.UNK=self.vocab_size-4
+        self.BOS=self.vocab_size-3
         self.EOS=self.vocab_size-2
+        self.PAD=self.vocab_size-1
         
     def sen2id(self, s):
         if s==[]:
@@ -59,7 +60,7 @@ class Data(object):
         self.vocab['UNK'] = dict_use.UNK
         self.vocab['BOS'] = dict_use.BOS
         self.vocab['EOS'] = dict_use.EOS
-
+        self.vocab['PAD'] = dict_use.PAD
         self.sen2id=dict_use.sen2id
         self.id2sen=dict_use.id2sen
         self.train_data, self.valid_data, self.test_data = self.read_data(self.option.data_path,\
@@ -120,7 +121,7 @@ class Data(object):
         return data, length, target
         
 def array_data(data,  max_length, dict_size, shuffle=False):
-    max_length_m1=max_length-1
+    max_length_m1=max_length-2
     if shuffle==True:
         np.random.shuffle(data)
     sequence_length_pre=np.array([len(line) for line in data]).astype(np.int32)
@@ -129,17 +130,18 @@ def array_data(data,  max_length, dict_size, shuffle=False):
         if item>max_length_m1:
             sequence_length.append(max_length)
         else:
-            sequence_length.append(item+1)
+            sequence_length.append(item+2)
     sequence_length=np.array(sequence_length)
     for i in range(len(data)):
         if len(data[i])>=max_length_m1:
             data[i]=data[i][:max_length_m1]
+            data[i] = [dict_size+1]+data[i]+[dict_size+2]
         else:
-            for j in range(max_length_m1-len(data[i])):
-                data[i].append(dict_size+1)
-        data[i].append(dict_size+1)
-    target=np.array(data).astype(np.int32)
-    input=np.concatenate([np.ones([len(data), 1])*(dict_size+2), target[:, :-1]], axis=1).astype(np.int32)
+            data[i] = [dict_size+1]+data[i]+[dict_size+2]
+            for j in range(max_length-len(data[i])):
+                data[i].append(dict_size+3)
+    input=np.array(data).astype(np.int32)
+    target=np.concatenate([input[:,1:], np.ones([len(data), 1])*(dict_size+3)], axis=1).astype(np.int32)
     return dataset(input, sequence_length, target)
 
 class dataset(object):
@@ -157,13 +159,15 @@ class dataset(object):
 def reverse_seq(input, sequence_length, target, dict_size):
     batch_size=input.shape[0]
     num_steps=input.shape[1]
-    input_new=np.zeros([batch_size, num_steps])+dict_size+1
-    target_new=np.zeros([batch_size, num_steps])+dict_size+1
+    #input_new= np.zeros([batch_size, num_steps])+dict_size+1
+    #target_new=np.zeros([batch_size, num_steps])+dict_size+1
+    input_new= np.copy(input)
+    target_new=np.copy(target)
     for i in range(batch_size):
-        length=sequence_length[i]-1
+        length=sequence_length[i]-2
         for j in range(length):
-            target_new[i][j]=target[i][length-1-j]
-        input_new[i][0]=dict_size+2
+            target_new[i][j]=target[i][length -1 -j]
         for j in range(length):
             input_new[i][j+1]=input[i][length-j]
     return input_new.astype(np.int32), sequence_length.astype(np.int32), target_new.astype(np.int32)
+
