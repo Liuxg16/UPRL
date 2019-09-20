@@ -1083,7 +1083,7 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None):
     similarityfun = similarity_keyword_bleu_tensor
 
     device = torch.device("cuda" if torch.cuda.is_available() and not option.no_cuda else "cpu")
-    agent = UPRL(option)
+    agent = UPRL_LM(option)
     agent.to(device)
     if option.uprl_path is not None:
         with open(option.uprl_path, 'rb') as f:
