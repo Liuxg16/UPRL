@@ -10,7 +10,7 @@ nohup python3 source/run.py --data_path data/coco-model/cocotrain.txt --emb_path
 
 
 # train RL
-python3 source/run.py --data_path data/input/input.txt --batch_size 25  --mode rl --exps_dir exps --exp_name test --gpu 3 --forward_path exps/lm/ckpt/model-best.pkl  --backward_path exps/lm-back/ckpt/model-best.pkl --repeat_size 8 --learning_rate 0.2
+nohup python3 source/run.py --data_path data/quoradata/train.lower  --batch_size 25   --mode rl --exps_dir exps --exp_name quora-edit12  --gpu 3 --forward_path exps/lm/ckpt/model-best.pkl  --backward_path exps/lm-back/ckpt/model-best.pkl --repeat_size 8 --learning_rate 0.2 --num_edits 12 --step_reward 0.005 --M_flu 3  --M_kw 6 &
 
 # test RL
 python3 source/run.py --data_path data/input/input.txt --batch_size 4 --mode rl-test --exps_dir exps --exp_name test --gpu 0 --forward_path exps/lm/ckpt/model-best.pkl --uprl_path modelbest.pkl

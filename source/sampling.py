@@ -79,8 +79,10 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmod
             
             sources = ' '.join(id2sen(inp[0]))
             targetss = ' '.join(id2sen(st.cpu().numpy()[2,0]))
+            rewardss= 'reward '+'{} '.format(rewards.cpu().numpy()[2,0])
             appendtext(sources, option.model_path+'log.log')
             appendtext(targetss, option.model_path+'log.log')
+            appendtext(rewardss, option.model_path+'log.log')
 
 
         loss = torch.mean(loss)

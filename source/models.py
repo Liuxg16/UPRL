@@ -476,6 +476,7 @@ class UPRL_LM(nn.Module):
         self.length = 15
         self.topk = option.topk
         self.num_edits = option.num_edits
+        self.step_reward = option.step_reward
         dropout = option.dropout
         self.prate = 0.1
         self.M_kw = option.M_kw
@@ -527,8 +528,9 @@ class UPRL_LM(nn.Module):
             #print('-----pos', pos)
             #print(id2sen(st.cpu().numpy()[0]))
             #print(id2sen(re.cpu().numpy()[0]))
-        step_reward = torch.sum(torch.eq(actions, 4*self.topk+1).float(),1) * 0.01 # hold
-        fv0, sim, div, flu  = self.f(s0,s0, key_pos, forwardmodel, sequence_length, sequence_length)
+        step_reward = torch.sum(torch.eq(actions, 4*self.topk+1).float(),1) * self.step_reward # hold
+        fv0, sim, div, flu  = self.f(s0,s0, key_pos, forwardmodel, sequence_length, sequence_length,
+                origin=True)
         fvt, sim, div, flu  = self.f(st,s0, key_pos, forwardmodel, length_t, sequence_length)
         improve_flag = fvt/fv0
         reward = (1.0/10)*improve_flag* torch.gt(improve_flag,1).float() + step_reward
@@ -605,10 +607,10 @@ class UPRL_LM(nn.Module):
 
         return st, pi, action, length_tt, rep_words
     
-    def f(self, st,s0, key_pos, forwardmodel=None, sequence_length =None, original_length=None):
+    def f(self, st,s0, key_pos, forwardmodel=None, sequence_length =None, original_length=None,
+            origin = False):
         # bs,l; bs,l; bs, l
         e=1e-50
-        M_kw=3
         emb0 = forwardmodel.encoder(s0)
         embt = forwardmodel.encoder(st).permute(0,2,1)
         emb_mat = torch.bmm(emb0,embt) # K,l,l
@@ -638,7 +640,10 @@ class UPRL_LM(nn.Module):
             fluency =\
                     -torch.sum(torch.log(torch.clamp(prod_prob,1e-50)),1)/sequence_length.squeeze(1).float()
             fluency = (1/torch.clamp(fluency, 0,100) )**self.M_flu
-            fluencyflag = torch.lt(fluency,5).float()
+            if origin:
+                fluencyflag = torch.lt(fluency,1e20).float()
+            else:
+                fluencyflag = torch.lt(fluency,5).float()
             res = sim * expression_diversity * fluencyflag *fluency +\
                      sim * expression_diversity * (1-fluencyflag)*0.01
         else:

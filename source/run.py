@@ -38,6 +38,7 @@ def main():
     parser.add_argument('--model', default=0, type=int)
     parser.add_argument('--repeat_size', default=8, type=int)
     parser.add_argument('--topk', default=30, type=int)
+    parser.add_argument('--step_reward', default=0.002, type=float)
     # optimization
     parser.add_argument('--batch_size', default=128, type=int)
     parser.add_argument('--epochs', default=200, type=int)
