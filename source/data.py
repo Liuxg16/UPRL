@@ -33,7 +33,7 @@ class Dicts(object):
         else:
             return [self.sen2id(x) for x in s]
     
-    def id2sen(self, s):
+    def id2sen(self, s, nonumber= False):
         if s==[]:
             return []
         Dict=self.Dict2
@@ -46,7 +46,8 @@ class Dicts(object):
                 elif item==dict_size:
                     s_new.append( 'UNK')
                 else:
-                    s_new.append('{}'.format(item))
+                    if not nonumber:
+                        s_new.append('{}'.format(item))
                     pass
             return s_new
         else:

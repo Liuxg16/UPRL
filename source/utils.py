@@ -180,7 +180,7 @@ def keyword_pos2sta_vec(option,keyword, pos):
 
 def read_data_use(option,  sen2id):
 
-    file_name = option.use_data_path
+    file_name = option.data_path
     max_length = option.num_steps
     dict_size = option.dict_size
     Rake = RAKE.Rake(RAKE.SmartStopList())

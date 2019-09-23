@@ -1,5 +1,7 @@
 data
 POS
+exps
+exp
 *.log
 *.txt
 *.pyc

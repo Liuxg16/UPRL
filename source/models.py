@@ -519,7 +519,7 @@ class UPRL_LM(nn.Module):
         self.action_m = torch.FloatTensor(self.batch_size, 4*self.topk+2).fill_(1.0/(4*self.topk+2)).to(self.device)
 
         for i in range(N_step): 
-            pos = i% (self.length-2)+1
+            pos = i% (self.length-3)+2
             st,pi, action, length_t , re= self.step(st, emb0, key_pos, pos, length_t,c0,h0,\
                     forwardmodel, backwardmodel)
             pis[:,i:i+1] = pi

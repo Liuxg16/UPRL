@@ -1,7 +1,6 @@
 import argparse, sys, torch
 sys.path.append('/home/liuxg/workspace/SAparaphrase/')
 sys.path.append('/home/liuxg/workspace/SAparaphrase/bert')
-from bert.bertinterface import BertEncoding, BertSimilarity
 from utils import get_corpus_bleu_scores, savetexts
 
 class Option(object):

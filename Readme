@@ -6,7 +6,7 @@ python3 source/run.py --data_path data/input/input.txt --exps_dir test --hidden_
 
 # train language model
 nohup python3 source/run.py --data_path data/quoradata/quora-all.txt  --batch_size 512  --mode lm   --exps_dir exps --exp_name lm  &
-nohup python3 source/run.py --data_path data/coco-model/cocotrain.txt  --emb_path data/coco-model/emb.pkl --dict_path data/coco-model/dict.pkl   --batch_size 512  --mode lm   --exps_dir exps --exp_name coco-lm  &
+nohup python3 source/run.py --data_path data/coco-model/cocotrain.txt --emb_path data/coco-model/emb.pkl --dict_path data/coco-model/dict.pkl --batch_size 512 --mode lm --exps_dir exps --exp_name coco-lm-back --backward --gpu 1  --learning_rate 0.0001 &
 
 
 # train RL
