@@ -1078,7 +1078,7 @@ def sa_single(input, sequence_length, sta_vec, id2sen, emb_word, forwardmodel, b
         pos += 1
     return ' '.join(id2sen(input[0])),V_old
 
-def simulatedAnnealing_batch(option, dataclass, forwardmodel = None):
+def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmodel=None):
     option = option
     similarityfun = similarity_keyword_bleu_tensor
 
@@ -1093,12 +1093,11 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None):
     emb_word,emb_id=pkl.load(StrToBytes(fileobj), encoding='latin1')
     fileobj.close()
     sim=option.sim
-    sta_vec=list(np.zeros([option.num_steps-1]))
 
     use_data, sta_vec_list = read_data_use(option, dataclass.sen2id)
     id2sen = dataclass.id2sen
     generateset = []
-    optimizer = optim.Adadelta(agent.parameters(),lr = 1)
+    optimizer = optim.Adadelta(agent.parameters(),lr = option.learning_rate)
    
     batch_size = option.batch_size
     maxvalue = 0
@@ -1123,13 +1122,12 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None):
         poskeys = poskeys.view(option.repeat_size*batch_size,-1).to(device)
         sequence_length = sequence_length.view(option.repeat_size*batch_size,-1).to(device)
 
-        loss, rewards, st , temp = agent(input, poskeys, sequence_length, forwardmodel) # bs,15; bs,steps
+        loss, rewards, st , temp = agent(input, poskeys, sequence_length, forwardmodel, backwardmodel) # bs,15; bs,steps
         if i%50==0 and rewards.mean().item()>maxvalue:
             maxvalue = rewards.mean().item()
-            with open('modelbest.pkl', 'wb') as f:
+            with open(option.model_path+'-best.pkl', 'wb') as f:
                 torch.save(agent.state_dict(), f)
-
-        if i % 100 == 0:
+        if i % 50 == 0:
             st = st.view(option.repeat_size,batch_size, -1)
             rewards = rewards.view(option.repeat_size, batch_size)
             temp = temp.view(option.repeat_size, batch_size).detach()
@@ -1142,11 +1140,11 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None):
             print(temp.cpu().numpy()[2,1])
             
             
-            print(' '.join(id2sen(inp[3])))
-            print('key words ', sta_vec[3])
-            print('generated:  '+' '.join(id2sen(st.cpu().numpy()[2,3])))
-            print('generated:  ', st.cpu().numpy()[2,3])
-            print(rewards.cpu().numpy()[2,3])
+            print(' '.join(id2sen(inp[0])))
+            print('key words ', sta_vec[0])
+            print('generated:  '+' '.join(id2sen(st.cpu().numpy()[2,0])))
+            print('generated:  ', st.cpu().numpy()[2,0])
+            print(rewards.cpu().numpy()[2,0])
 
 
         #print('generated:  '+' '.join(id2sen(st.cpu().numpy()[3,1])))
@@ -1155,7 +1153,7 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None):
         a_rewards =  torch.mean(rewards).item()
         if i % 50 != 0:
             loss.backward()
-            torch.nn.utils.clip_grad_norm(agent.parameters(), 5)
+            torch.nn.utils.clip_grad_norm_(agent.parameters(), 1)
             optimizer.step()
             avg_rewards.append(a_rewards)
             print('sentences: {}, avg reward {}, loss {}'.format(i, a_rewards,loss.item()))
@@ -1164,12 +1162,12 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None):
             print('Testing: {}, avg reward {}, loss {}'.format(i, a_rewards,loss.item()))
             avg_rewards = []
 
-def testing(option, dataclass, forwardmodel = None):
+def testing(option, dataclass, forwardmodel = None, backwardmodel=None):
     option = option
     similarityfun = similarity_keyword_bleu_tensor
 
     device = torch.device("cuda" if torch.cuda.is_available() and not option.no_cuda else "cpu")
-    agent = UPRL(option)
+    agent = UPRL_LM(option)
     agent.to(device)
     if option.uprl_path is not None:
         with open(option.uprl_path, 'rb') as f:
@@ -1206,7 +1204,8 @@ def testing(option, dataclass, forwardmodel = None):
         poskeys = poskeys.view(option.repeat_size*batch_size,-1).to(device)
         sequence_length = sequence_length.view(option.repeat_size*batch_size,-1).to(device)
 
-        loss, rewards, st , temp = agent(input, poskeys, sequence_length, forwardmodel) # bs,15; bs,steps
+        loss, rewards, st , temp = agent(input, poskeys, sequence_length, forwardmodel,
+                backwardmodel, id2sen) # bs,15; bs,steps
 
         st = st.view(option.repeat_size,batch_size, -1)
         rewards = rewards.view(option.repeat_size, batch_size)
@@ -1218,9 +1217,5 @@ def testing(option, dataclass, forwardmodel = None):
         print('generated:  '+' '.join(id2sen(st.cpu().numpy()[2,1])))
         print('generated:  ', st.cpu().numpy()[2,1])
         print('reward', rewards.cpu().numpy()[2,1])
-        print(temp.cpu().numpy()[2,1])
-            
-            
-
-
+        print('temp', temp.cpu().numpy()[2,1])
 

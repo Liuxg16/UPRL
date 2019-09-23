@@ -46,6 +46,7 @@ class Dicts(object):
                 elif item==dict_size:
                     s_new.append( 'UNK')
                 else:
+                    s_new.append('{}'.format(item))
                     pass
             return s_new
         else:

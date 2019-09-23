@@ -6,9 +6,11 @@ python3 source/run.py --data_path data/input/input.txt --exps_dir test --hidden_
 
 # train language model
 nohup python3 source/run.py --data_path data/quoradata/quora-all.txt  --batch_size 512  --mode lm   --exps_dir exps --exp_name lm  &
+nohup python3 source/run.py --data_path data/coco-model/cocotrain.txt  --emb_path data/coco-model/emb.pkl --dict_path data/coco-model/dict.pkl   --batch_size 512  --mode lm   --exps_dir exps --exp_name coco-lm  &
+
 
 # train RL
-nohup  python3 source/run.py --data_path data/input/input.txt  --batch_size 30   --mode rl --exps_dir exps --exp_name test   --gpu 1 --forward_path exps/lm/ckpt/model-best.pkl  >log.log   &
+python3 source/run.py --data_path data/input/input.txt --batch_size 25  --mode rl --exps_dir exps --exp_name test --gpu 3 --forward_path exps/lm/ckpt/model-best.pkl  --backward_path exps/lm-back/ckpt/model-best.pkl --repeat_size 8 --learning_rate 0.2
 
 # test RL
 python3 source/run.py --data_path data/input/input.txt --batch_size 4 --mode rl-test --exps_dir exps --exp_name test --gpu 0 --forward_path exps/lm/ckpt/model-best.pkl --uprl_path modelbest.pkl
