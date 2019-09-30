@@ -63,10 +63,11 @@ class RNNModel(nn.Module):
 		acc = torch.mean(torch.eq(idx,target).float())
 		return loss,acc, decoded.view(batch_size, length, self.ntoken)
 
-	def predict(self, input, pos, sequence_length, forwardflag = True, K = 20):
+	def predict(self, input, s0, pos, sequence_length, forwardflag = True, topk = 20):
 		'''
 		bs,15; bs,15
 		'''
+		K = topk-self.length
 		batch_size = input.size(0)
 		length = input.size(1)
 		valid_id = torch.gt(sequence_length-1,pos)
@@ -78,6 +79,7 @@ class RNNModel(nn.Module):
 			decoded = nn.Softmax(2)(self.decoder(output)) # bs,v
 			decoded[:,:,30000] = 0
 			prob, word = torch.topk(decoded[:,pos-1,:],K)
+			word = torch.cat([word, s0],1)
 			ins_word = word.clone()
 		else:
 			input = reverse_input(input.cpu(), sequence_length.cpu()).to(self.device)
@@ -94,6 +96,7 @@ class RNNModel(nn.Module):
 			ids = ids.scatter(1, revse_id,ones)
 			decoded_column = decoded[ids>0.5]
 			prob, word = torch.topk(decoded_column,K)
+			word = torch.cat([word, s0],1)
             #for inserion
 			revse_id =valid_id.long()*(sequence_length-pos-1)
 			ids = torch.zeros(batch_size, self.length).to(self.device)
@@ -101,6 +104,7 @@ class RNNModel(nn.Module):
 			ids = ids.scatter(1, revse_id,ones)
 			decoded = decoded[ids>0.5]
 			prob, ins_word = torch.topk(decoded,K)
+			ins_word = torch.cat([ins_word, s0],1)
 
 
 		return word, ins_word, valid_id
@@ -500,7 +504,7 @@ class UPRL_LM(nn.Module):
         self.nhid = nhid
         self.device = torch.device("cuda" if torch.cuda.is_available() and not self.option.no_cuda else "cpu")
 
-    def forward(self, input, key_pos, sequence_length, forwardmodel, backwardmodel, id2sen=None):
+    def forward(self, input, key_pos, sequence_length, forwardmodel, backwardmodel,embmodel, id2sen=None):
         '''
         bs,15; bs,14
         '''
@@ -521,7 +525,7 @@ class UPRL_LM(nn.Module):
 
         for i in range(N_step): 
             pos = i% (self.length-3)+2
-            st,pi, action, length_t , re= self.step(st, emb0, key_pos, pos, length_t,c0,h0,\
+            st,pi, action, length_t , re= self.step(st,s0, emb0, key_pos, pos, length_t,c0,h0,\
                     forwardmodel, backwardmodel)
             pis[:,i:i+1] = pi
             actions[:,i:i+1] = action
@@ -529,12 +533,11 @@ class UPRL_LM(nn.Module):
             #print(id2sen(st.cpu().numpy()[0]))
             #print(id2sen(re.cpu().numpy()[0]))
         step_reward = torch.sum(torch.eq(actions, 4*self.topk+1).float(),1) * self.step_reward # hold
-        fv0, sim, div, flu  = self.f(s0,s0, key_pos, forwardmodel, sequence_length, sequence_length,
+        fv0, sim, div, flu  = self.f(s0,s0, key_pos, forwardmodel, backwardmodel, embmodel, sequence_length, sequence_length,
                 origin=True)
-        fvt, sim, div, flu  = self.f(st,s0, key_pos, forwardmodel, length_t, sequence_length)
+        fvt, sim, div, flu  = self.f(st,s0, key_pos, forwardmodel, backwardmodel, embmodel, length_t, sequence_length)
         improve_flag = fvt/fv0
         reward = (1.0/10)*improve_flag* torch.gt(improve_flag,1).float() + step_reward
-
         #reward = torch.sum(actions,1)*0.1
         reward = reward.detach() # bs,1
         reward =  reward.view(self.repeat_size, -1) 
@@ -544,12 +547,12 @@ class UPRL_LM(nn.Module):
         loss = sum_pi*(reward_adjust.view(-1,1)) # bs,1
         return loss, reward, st, flu.detach()
 
-    def step(self, s_t_1, emb0, key_pos, pos, length_t,c0,h0, forwardmodel, backwardmodel):
+    def step(self, s_t_1, s0, emb0, key_pos, pos, length_t,c0,h0, forwardmodel, backwardmodel):
         # bs,L; bs,l, emb; bs,l; int;
         pos_tensor = torch.zeros(self.batch_size,self.length,1).to(self.device)
         pos_tensor[:,pos,:] = 1
         embt = self.embedding(s_t_1)
-        embt[:,pos,:] = embt[:,pos,:]*0
+        embt = embt* (1-pos_tensor)
         emb = torch.cat([embt,emb0, pos_tensor],2)
         output, hidden = self.rnn(emb, (c0,h0)) # batch, length,2h
         #pooled = nn.MaxPool1d(self.length)(output.permute(0,2,1)).squeeze(2) #batch,2h
@@ -557,9 +560,9 @@ class UPRL_LM(nn.Module):
         # 2*hid+1 +length
         representation = torch.cat([pooled,key_pos[:,pos:pos+1], pos_tensor.squeeze(2)],1)
 
-        rep_f_word, ins_f_word, _ = forwardmodel.predict(s_t_1, pos, length_t, K=self.topk) # bs,k
-        rep_b_word, ins_b_word, valid_id = backwardmodel.predict(s_t_1, pos, length_t, forwardflag =
-            False, K = self.topk) # bs,k
+        rep_f_word, ins_f_word, _ = forwardmodel.predict(s_t_1,s0, pos, length_t, topk=self.topk) # bs,k
+        rep_b_word, ins_b_word, valid_id = backwardmodel.predict(s_t_1, s0, pos, length_t, forwardflag =
+            False, topk = self.topk) # bs,k
         K = 4*self.topk+2
         tag = torch.arange(K).view(-1,1).long()
         onehot = torch.zeros(K,K).scatter_(1,tag,int(1)).to(self.device)
@@ -607,12 +610,12 @@ class UPRL_LM(nn.Module):
 
         return st, pi, action, length_tt, rep_words
     
-    def f(self, st,s0, key_pos, forwardmodel=None, sequence_length =None, original_length=None,
+    def f(self, st,s0, key_pos, forwardmodel=None, backwardmodel=None,  embmodel=None, sequence_length =None, original_length=None,
             origin = False):
         # bs,l; bs,l; bs, l
         e=1e-50
-        emb0 = forwardmodel.encoder(s0)
-        embt = forwardmodel.encoder(st).permute(0,2,1)
+        emb0 = embmodel.encoder(s0)
+        embt = embmodel.encoder(st).permute(0,2,1)
         emb_mat = torch.bmm(emb0,embt) # K,l,l
         norm0 = 1/(torch.norm(emb0,p= 2,dim=2)+e) # K,l
         normt = 1/(torch.norm(embt,p= 2,dim=1)+e) # K,l
@@ -623,7 +626,6 @@ class UPRL_LM(nn.Module):
         sim,_ = torch.min(sim_vec*key_pos+ (1-key_pos),1)
         sim = sim**self.M_kw
 
-        M_repeat = 1
         stt = st+1
         s00 = s0+1
 
@@ -639,13 +641,18 @@ class UPRL_LM(nn.Module):
             prod_prob = forwardmodel.prod_prob(st).squeeze(2) # bs,l, 1
             fluency =\
                     -torch.sum(torch.log(torch.clamp(prod_prob,1e-50)),1)/sequence_length.squeeze(1).float()
-            fluency = (1/torch.clamp(fluency, 0,100) )**self.M_flu
+
+            st_back = reverse_input(st.cpu(), sequence_length.cpu()).to(self.device)
+            prod_prob_back = backwardmodel.prod_prob(st_back).squeeze(2) # bs,l, 1
+            fluency_back =\
+                    -torch.sum(torch.log(torch.clamp(prod_prob_back,1e-50)),1)/sequence_length.squeeze(1).float()
+            fluency = (1/torch.clamp(fluency+fluency_back, 0,100) )**self.M_flu
             if origin:
                 fluencyflag = torch.lt(fluency,1e20).float()
             else:
-                fluencyflag = torch.lt(fluency,5).float()
+                fluencyflag = torch.lt(fluency,10).float()
             res = sim * expression_diversity * fluencyflag *fluency +\
-                     sim * expression_diversity * (1-fluencyflag)*0.01
+                     sim * expression_diversity * (1-fluencyflag)*0.01*fluency
         else:
             res = sim * expression_diversity
         return res, sim, expression_diversity, fluency

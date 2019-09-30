@@ -1,4 +1,5 @@
 import os
+import pickle
 import numpy as np
 import time,random
 import argparse, torch,data
@@ -46,7 +47,7 @@ def main():
     parser.add_argument('--weight_decay', default=0.00, type=float)
     parser.add_argument('--clip_norm', default=5, type=float)
     parser.add_argument('--no_cuda', default=False, action="store_true")
-    parser.add_argument('--pretrain', default=False, action="store_true")
+    parser.add_argument('--pretrain', default=True, action="store_true")
     parser.add_argument('--threshold', default=0.1, type=float)
 
     # evaluation
@@ -127,6 +128,7 @@ def main():
     elif option.mode == 'rl':
         forwardmodel = RNNModel(option).cuda()
         backwardmodel = RNNModel(option).cuda()
+        embmodel = RNNModel(option).cuda()
         if option.forward_path is  not None: 
             with open(option.forward_path, 'rb') as f:
                 forwardmodel.load_state_dict(torch.load(f))
@@ -134,7 +136,19 @@ def main():
         if option.backward_path is  not None: 
             with open(option.backward_path, 'rb') as f:
                 backwardmodel.load_state_dict(torch.load(f))
-        simulatedAnnealing_batch(option, dataclass, forwardmodel, backwardmodel)
+
+        with open(option.emb_path, 'rb') as f: 
+            print('xxx')
+            wordvec,embedding = pickle.load(f, encoding = 'latin1')
+        for key, embs in wordvec.items():
+            if key in dataclass.vocab:
+                id = dataclass.vocab[key]
+                embmodel.encoder.weight.data[id,:] = torch.tensor(wordvec[key],dtype=torch.float).cuda()
+            else:
+                print(key)
+        
+        print('xxx')
+        simulatedAnnealing_batch(option, dataclass, forwardmodel, backwardmodel, embmodel)
         print("="*36 + "Finish" + "="*36)
     elif option.mode == 'rl-test':
         forwardmodel = RNNModel(option).cuda()
@@ -148,6 +162,8 @@ def main():
                 backwardmodel.load_state_dict(torch.load(f))
         testing(option, dataclass, forwardmodel, backwardmodel)
         print("="*36 + "Finish" + "="*36)
+
+
 
 
 if __name__ == "__main__":

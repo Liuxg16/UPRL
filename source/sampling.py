@@ -13,7 +13,8 @@ import data, RAKE
 from data import array_data
 from zpar import ZPar
 
-def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmodel=None):
+def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmodel=None,
+        embmodel=None):
     option = option
     similarityfun = similarity_keyword_bleu_tensor
 
@@ -38,68 +39,74 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmod
     maxvalue = 0
     avg_rewards = []
     print('number of samples ', use_data.length) 
-    intervals = 50
-    for i in range(0,10000000000):
-        sen_id = i% (use_data.length//batch_size)
-        sta_vec=sta_vec_list[sen_id*batch_size:sen_id*batch_size+batch_size]
-        sta_vec = np.array(sta_vec)
-        inp, sequence_length, _=use_data(batch_size, sen_id)
-        assert len(inp)==len(sequence_length)
-        batch_size = len(inp)
-
-        if i % intervals == 0:
+    intervals = 10
+    for ba in range(0,1000000):
+        if ba % intervals == 0:
             agent.eval()
         else:
             agent.train()
-        input = torch.tensor(inp).long().view(1, batch_size, -1).repeat(option.repeat_size,1,1)
-        poskeys = torch.tensor(sta_vec).float().view(1, batch_size, -1).repeat(option.repeat_size,1,1)
-        sequence_length = torch.tensor(sequence_length).long().view(1, batch_size).repeat(option.repeat_size,1)
 
-        input = input.view(option.repeat_size*batch_size,-1).to(device)
-        poskeys = poskeys.view(option.repeat_size*batch_size,-1).to(device)
-        sequence_length = sequence_length.view(option.repeat_size*batch_size,-1).to(device)
+        avg_rewards = []
+        for i in range(0,100):
+            sen_id = (ba*100+i)% (use_data.length//batch_size)
+            sta_vec=sta_vec_list[sen_id*batch_size:sen_id*batch_size+batch_size]
+            sta_vec = np.array(sta_vec)
+            inp, sequence_length, _=use_data(batch_size, sen_id)
+            assert len(inp)==len(sequence_length)
+            batch_size = len(inp)
 
-        loss, rewards, st , temp = agent(input, poskeys, sequence_length, forwardmodel, backwardmodel) # bs,15; bs,steps
-        if i%intervals==0 and rewards.mean().item()>maxvalue:
-            maxvalue = rewards.mean().item()
+            input = torch.tensor(inp).long().view(1, batch_size, -1).repeat(option.repeat_size,1,1)
+            poskeys = torch.tensor(sta_vec).float().view(1, batch_size, -1).repeat(option.repeat_size,1,1)
+            sequence_length = torch.tensor(sequence_length).long().view(1, batch_size).repeat(option.repeat_size,1)
+
+            input = input.view(option.repeat_size*batch_size,-1).to(device)
+            poskeys = poskeys.view(option.repeat_size*batch_size,-1).to(device)
+            sequence_length = sequence_length.view(option.repeat_size*batch_size,-1).to(device)
+
+            loss, rewards, st , temp = agent(input, poskeys, sequence_length, forwardmodel,
+                    backwardmodel, embmodel) # bs,15; bs,steps
+            loss = torch.mean(loss)
+            if i  == 99:
+                st = st.view(option.repeat_size,batch_size, -1)
+                rewards = rewards.view(option.repeat_size, batch_size)
+                temp = temp.view(option.repeat_size, batch_size).detach()
+                print(' '.join(id2sen(inp[1])))
+                print(inp[1])
+                print('key words ', sta_vec[1])
+                print('generated:  '+' '.join(id2sen(st.cpu().numpy()[2,1])))
+                print('generated:  ', st.cpu().numpy()[2,1])
+                print(rewards.cpu().numpy()[2,1])
+                print(temp.cpu().numpy()[2,1])
+                
+                
+                sources = ' '.join(id2sen(inp[0]))
+                targetss = ' '.join(id2sen(st.cpu().numpy()[2,0]))
+                rewardss= 'reward '+'{} '.format(rewards.cpu().numpy()[2,0])
+                appendtext(sources, option.model_path+'log.log')
+                appendtext(targetss, option.model_path+'log.log')
+                appendtext(rewardss, option.model_path+'log.log')
+
+            a_rewards =  torch.mean(rewards).item()
+            avg_rewards.append(a_rewards)
+            if agent.training:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(agent.parameters(), 1)
+                optimizer.step()
+
+        if agent.training:
+            trainstr = 'Training: {}, avg reward {}, loss {}'.format(ba, np.mean(avg_rewards),loss.item())
+        else:
+            trainstr = 'Testing: {}, avg reward {}, loss {}'.format(ba, np.mean(avg_rewards),loss.item())
+
+        appendtext(trainstr, option.model_path+'log.log')
+        
+        avg_R = np.mean(avg_rewards)
+        if not agent.training and avg_R>maxvalue:
+            maxvalue = avg_R.item()
             with open(option.model_path+'-best.pkl', 'wb') as f:
                 torch.save(agent.state_dict(), f)
-        if i % intervals == 0:
-            st = st.view(option.repeat_size,batch_size, -1)
-            rewards = rewards.view(option.repeat_size, batch_size)
-            temp = temp.view(option.repeat_size, batch_size).detach()
-            print(' '.join(id2sen(inp[1])))
-            print(inp[1])
-            print('key words ', sta_vec[1])
-            print('generated:  '+' '.join(id2sen(st.cpu().numpy()[2,1])))
-            print('generated:  ', st.cpu().numpy()[2,1])
-            print(rewards.cpu().numpy()[2,1])
-            print(temp.cpu().numpy()[2,1])
-            
-            
-            sources = ' '.join(id2sen(inp[0]))
-            targetss = ' '.join(id2sen(st.cpu().numpy()[2,0]))
-            rewardss= 'reward '+'{} '.format(rewards.cpu().numpy()[2,0])
-            appendtext(sources, option.model_path+'log.log')
-            appendtext(targetss, option.model_path+'log.log')
-            appendtext(rewardss, option.model_path+'log.log')
 
 
-        loss = torch.mean(loss)
-        a_rewards =  torch.mean(rewards).item()
-        if i % intervals != 0:
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(agent.parameters(), 1)
-            optimizer.step()
-            avg_rewards.append(a_rewards)
-            #print('sentences: {}, avg reward {}, loss {}'.format(i, a_rewards,loss.item()))
-        else:
-            trainstr = 'sentences: {}, avg reward {}, loss {}'.format(i, np.mean(avg_rewards),loss.item())
-            teststr = 'Testing: {}, avg reward {}, loss {}'.format(i, a_rewards,loss.item())
-
-            appendtext(trainstr, option.model_path+'log.log')
-            appendtext(teststr, option.model_path+'log.log')
-            avg_rewards = []
 
 def testing(option, dataclass, forwardmodel = None, backwardmodel=None):
     option = option

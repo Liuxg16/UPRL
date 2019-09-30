@@ -66,6 +66,7 @@ class Experiment():
         self.device = torch.device("cuda" if torch.cuda.is_available() and not option.no_cuda else "cpu")
 
     def init_embedding(self, filename):
+        print('xxxxxxxxxxxx')
         try: 
             with open(filename, 'rb') as f: 
                 embedding = pickle.load(f)
