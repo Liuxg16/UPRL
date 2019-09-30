@@ -66,30 +66,16 @@ class Experiment():
         self.device = torch.device("cuda" if torch.cuda.is_available() and not option.no_cuda else "cpu")
 
     def init_embedding(self, filename):
-        print('xxxxxxxxxxxx')
-        try: 
-            with open(filename, 'rb') as f: 
-                embedding = pickle.load(f)
-                self.learner.encoder.weight.data = embedding.cuda()
-        except:
-            vocab_vec = utils.read_word2vec(filename)
-            idx2word = dict((word,idx) for idx,word in self.vocab.items())
-            for id in idx2word.keys():
-                key = idx2word[id]
-                if key in vocab_vec:
-                    self.learner.encoder.weight.data[id,:] = torch.tensor(vocab_vec[key],dtype=torch.float).cuda()
-                else:
-                    print(key)
-                    self.learner.encoder.weight.data[id,:] = \
-                    torch.from_numpy(np.random.uniform(-0.01, 0.01, 300).astype("float32")).float().cuda()
+        with open(filename, 'rb') as f: 
+            print('xxx')
+            wordvec,embedding = pickle.load(f, encoding = 'latin1')
+        for key, embs in wordvec.items():
+            if key in self.vocab:
+                id = self.vocab[key]
+                self.learner.encoder.weight.data[id,:] = torch.tensor(wordvec[key],dtype=torch.float).cuda()
+            else:
+                print(key)
 
-
-            embfile = os.path.join(self.option.this_expsdir,'embedding_layer.pkl')
-            with open(embfile, 'wb') as f:
-                pickle.dump(self.learner.encoder.weight.data.cpu(),f)
-            # with open(vocab_path, 'wb') as f:
-            #     pickle.dump(vocab,f)
-            del vocab_vec
 
 
     def one_epoch(self, mode, num_batch, next_fn):
