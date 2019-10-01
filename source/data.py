@@ -82,7 +82,8 @@ class Data(object):
                 for line in f:
                     line = line.strip().lower()
                     # clear
-                    data.append(self.sen2id(line.split()))
+                    if len(line.split())>2:
+                        data.append(self.sen2id(line.split()))
         train_data=array_data(data[ : int(len(data)*(tt_proportion-0.05))], max_length, dict_size, shuffle=True)
         valid_data=array_data(data[int(len(data)*(tt_proportion-0.05)): int(len(data)*tt_proportion)], max_length, dict_size, shuffle=True)
         test_data=array_data(data[int(len(data)*tt_proportion) : ], max_length, dict_size, shuffle=True)

@@ -110,8 +110,11 @@ def read_data_use(option,  sen2id):
         sta_vec_list=[]
         j=0
         for line in f:
+            if len(line.split())<2:
+                continue
             sta_vec=list(np.zeros([option.num_steps-1]))
             keyword=Rake.run(line.strip())
+            
             pos_list=tagger.tag_sentence(line.strip()).split()
             # pos=zip(*[x.split('/') for x in pos_list])[0]
             pos=list(zip(*[x.split('/') for x in pos_list]))[0]
