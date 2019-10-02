@@ -14,6 +14,7 @@ nohup python3 source/run.py --data_path data/quoradata/train.lower --batch_size 
 
 # test RL
 python3 source/run.py --data_path data/quoradata/test.txt  --batch_size 100 --mode rl-test --exps_dir exps --exp_name test --gpu 1 --forward_path exps/lm/ckpt/model-best.pkl --uprl_path exps/quora-edit12/ckpt/model-best.pkl   --backward_path exps/lm-back/ckpt/model-best.pkl --repeat_size 1
+python3 source/run.py --data_path data/coco-model/cocovalid.txt  --batch_size 10 --mode rl-test --exps_dir exps --exp_name test --gpu 1 --forward_path exps/coco-lm/ckpt/model-best.pkl --uprl_path exps/coco-flu2/ckpt/model-best.pkl   --backward_path exps/coco-lm-back/ckpt/model-best.pkl --emb_path data/coco-model/emb.pkl --dict_path data/coco-model/dict.pkl --repeat_size 1  --topk 40
 
 
 # evaluation

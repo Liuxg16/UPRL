@@ -143,6 +143,7 @@ def array_data(data,  max_length, dict_size, shuffle=False):
             data[i] = [dict_size+1]+data[i]+[dict_size+2]
             for j in range(max_length-len(data[i])):
                 data[i].append(dict_size+3)
+    #print(data[2])
     input=np.array(data).astype(np.int32)
     target=np.concatenate([input[:,1:], np.ones([len(data), 1])*(dict_size+3)], axis=1).astype(np.int32)
     return dataset(input, sequence_length, target)

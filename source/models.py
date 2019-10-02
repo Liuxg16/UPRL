@@ -482,7 +482,7 @@ class UPRL_LM(nn.Module):
         self.num_edits = option.num_edits
         self.step_reward = option.step_reward
         dropout = option.dropout
-        self.prate = 0.1
+        self.prate = option.prate
         self.M_kw = option.M_kw
         self.M_flu = option.M_flu
         self.vocab_size = option.vocab_size
@@ -524,7 +524,7 @@ class UPRL_LM(nn.Module):
         self.action_m = torch.FloatTensor(self.batch_size, 4*self.topk+2).fill_(1.0/(4*self.topk+2)).to(self.device)
 
         for i in range(N_step): 
-            pos = i% (self.length-3)+2
+            pos = i% (self.length-2)+1
             st,pi, action, length_t , re= self.step(st,s0, emb0, key_pos, pos, length_t,c0,h0,\
                     forwardmodel, backwardmodel)
             pis[:,i:i+1] = pi

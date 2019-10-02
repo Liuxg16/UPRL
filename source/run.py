@@ -40,6 +40,7 @@ def main():
     parser.add_argument('--repeat_size', default=8, type=int)
     parser.add_argument('--topk', default=30, type=int)
     parser.add_argument('--step_reward', default=0.002, type=float)
+    parser.add_argument('--prate', default=0.1, type=float)
     # optimization
     parser.add_argument('--batch_size', default=128, type=int)
     parser.add_argument('--epochs', default=200, type=int)
@@ -153,6 +154,7 @@ def main():
     elif option.mode == 'rl-test':
         forwardmodel = RNNModel(option).cuda()
         backwardmodel = RNNModel(option).cuda()
+        embmodel = RNNModel(option).cuda()
         if option.forward_path is  not None: 
             with open(option.forward_path, 'rb') as f:
                 forwardmodel.load_state_dict(torch.load(f))
@@ -160,7 +162,19 @@ def main():
         if option.backward_path is  not None: 
             with open(option.backward_path, 'rb') as f:
                 backwardmodel.load_state_dict(torch.load(f))
-        testing(option, dataclass, forwardmodel, backwardmodel)
+
+        with open(option.emb_path, 'rb') as f: 
+            print('xxx')
+            wordvec,embedding = pickle.load(f, encoding = 'latin1')
+        for key, embs in wordvec.items():
+            if key in dataclass.vocab:
+                id = dataclass.vocab[key]
+                embmodel.encoder.weight.data[id,:] = torch.tensor(wordvec[key],dtype=torch.float).cuda()
+            else:
+                print(key)
+
+
+        testing(option, dataclass, forwardmodel, backwardmodel, embmodel)
         print("="*36 + "Finish" + "="*36)
 
 

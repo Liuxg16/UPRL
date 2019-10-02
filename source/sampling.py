@@ -108,7 +108,7 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmod
 
 
 
-def testing(option, dataclass, forwardmodel = None, backwardmodel=None):
+def testing(option, dataclass, forwardmodel = None, backwardmodel=None, embmodel = None):
     option = option
     similarityfun = similarity_keyword_bleu_tensor
 
@@ -153,19 +153,20 @@ def testing(option, dataclass, forwardmodel = None, backwardmodel=None):
         sequence_length = sequence_length.view(option.repeat_size*batch_size,-1).to(device)
 
         loss, rewards, st , temp = agent(input, poskeys, sequence_length, forwardmodel,
-                backwardmodel, id2sen) # bs,15; bs,steps
+                backwardmodel, embmodel, id2sen) # bs,15; bs,steps
+
 
         st = st.view(option.repeat_size,batch_size, -1).cpu().numpy()
-        if False:
+        if True:
             rewards = rewards.view(option.repeat_size, batch_size)
             temp = temp.view(option.repeat_size, batch_size).detach()
             print(' '.join(id2sen(inp[1])))
             print(inp[1])
             print('length ', sequence_length[1])
             print('key words ', sta_vec[1])
-            print('generated:  '+' '.join(id2sen(st.cpu().numpy()[2,1])))
-            print('generated:  ', st.cpu().numpy()[2,1])
-            print('reward', rewards.cpu().numpy()[2,1])
-            print('temp', temp.cpu().numpy()[2,1])
+            print('generated:  '+' '.join(id2sen(st[0,1])))
+            print('generated:  ', st[0,1])
+            print('reward', rewards.cpu().numpy()[0,1])
+            print('temp', temp.cpu().numpy()[0,1])
         for j in range(batch_size):
             appendtext(' '.join(id2sen(st[0,j], True)), option.save_path)
