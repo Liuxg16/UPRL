@@ -79,6 +79,7 @@ def main():
     parser.add_argument('--C', default=0.05, type=float)
     parser.add_argument('--M_kw', default=2, type=float)
     parser.add_argument('--M_flu', default=2, type=float)
+    parser.add_argument('--M_div', default=1, type=float)
     parser.add_argument('--M_bleu', default=1, type=float)
 
     d = vars(parser.parse_args())
@@ -163,15 +164,6 @@ def main():
             with open(option.backward_path, 'rb') as f:
                 backwardmodel.load_state_dict(torch.load(f))
 
-        with open(option.emb_path, 'rb') as f: 
-            print('xxx')
-            wordvec,embedding = pickle.load(f, encoding = 'latin1')
-        for key, embs in wordvec.items():
-            if key in dataclass.vocab:
-                id = dataclass.vocab[key]
-                embmodel.encoder.weight.data[id,:] = torch.tensor(wordvec[key],dtype=torch.float).cuda()
-            else:
-                print(key)
 
 
         testing(option, dataclass, forwardmodel, backwardmodel, embmodel)

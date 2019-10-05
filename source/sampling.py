@@ -40,6 +40,7 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmod
     avg_rewards = []
     print('number of samples ', use_data.length) 
     intervals = 10
+    num_epoch = 10
     for ba in range(0,1000000):
         if ba % intervals == 0:
             agent.eval()
@@ -47,8 +48,8 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmod
             agent.train()
 
         avg_rewards = []
-        for i in range(0,100):
-            sen_id = (ba*100+i)% (use_data.length//batch_size)
+        for i in range(0,num_epoch):
+            sen_id = (ba*num_epoch+i)% (use_data.length//batch_size)
             sta_vec=sta_vec_list[sen_id*batch_size:sen_id*batch_size+batch_size]
             sta_vec = np.array(sta_vec)
             inp, sequence_length, _=use_data(batch_size, sen_id)
@@ -63,10 +64,10 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmod
             poskeys = poskeys.view(option.repeat_size*batch_size,-1).to(device)
             sequence_length = sequence_length.view(option.repeat_size*batch_size,-1).to(device)
 
-            loss, rewards, st , temp = agent(input, poskeys, sequence_length, forwardmodel,
+            loss, rewards, st , temp, temp2 = agent(input, poskeys, sequence_length, forwardmodel,
                     backwardmodel, embmodel) # bs,15; bs,steps
             loss = torch.mean(loss)
-            if i  == 99:
+            if i  == num_epoch-1:
                 st = st.view(option.repeat_size,batch_size, -1)
                 rewards = rewards.view(option.repeat_size, batch_size)
                 temp = temp.view(option.repeat_size, batch_size).detach()
@@ -152,7 +153,7 @@ def testing(option, dataclass, forwardmodel = None, backwardmodel=None, embmodel
         poskeys = poskeys.view(option.repeat_size*batch_size,-1).to(device)
         sequence_length = sequence_length.view(option.repeat_size*batch_size,-1).to(device)
 
-        loss, rewards, st , temp = agent(input, poskeys, sequence_length, forwardmodel,
+        loss, rewards, st , temp, temp2 = agent(input, poskeys, sequence_length, forwardmodel,
                 backwardmodel, embmodel, id2sen) # bs,15; bs,steps
 
 
@@ -160,6 +161,7 @@ def testing(option, dataclass, forwardmodel = None, backwardmodel=None, embmodel
         if True:
             rewards = rewards.view(option.repeat_size, batch_size)
             temp = temp.view(option.repeat_size, batch_size).detach()
+            temp2 = temp2.view(option.repeat_size, batch_size).detach()
             print(' '.join(id2sen(inp[1])))
             print(inp[1])
             print('length ', sequence_length[1])
@@ -168,5 +170,6 @@ def testing(option, dataclass, forwardmodel = None, backwardmodel=None, embmodel
             print('generated:  ', st[0,1])
             print('reward', rewards.cpu().numpy()[0,1])
             print('temp', temp.cpu().numpy()[0,1])
+            print('temp2', temp2.cpu().numpy()[0,1])
         for j in range(batch_size):
             appendtext(' '.join(id2sen(st[0,j], True)), option.save_path)
