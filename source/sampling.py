@@ -19,8 +19,8 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmod
     similarityfun = similarity_keyword_bleu_tensor
 
     device = torch.device("cuda" if torch.cuda.is_available() and not option.no_cuda else "cpu")
-    #agent = UPRL_LM(option)
-    agent = UPRL_BERT(option)
+    agent = UPRL_LM(option)
+    #agent = UPRL_BERT(option)
     agent.to(device)
     if option.uprl_path is not None:
         with open(option.uprl_path, 'rb') as f:
@@ -68,18 +68,17 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmod
                 backwardmodel, embmodel, id2sen) # bs,15; bs,steps
 
             loss = torch.mean(loss)
-            if i  == num_epoch-1:
+            if i  == num_epoch-1 and random.random()>0.5:
                 st = st.view(option.repeat_size,batch_size, -1)
                 rewards = rewards.view(option.repeat_size, batch_size)
                 temp = temp.view(option.repeat_size, batch_size).detach()
-                print(' '.join(id2sen(inp[1])))
-                print(inp[1])
-                print('key words ', sta_vec[1])
-                print('generated:  '+' '.join(id2sen(st.cpu().numpy()[2,1])))
-                print('generated:  ', st.cpu().numpy()[2,1])
-                print(rewards.cpu().numpy()[2,1])
-                print(temp.cpu().numpy()[2,1])
-                
+                #print(' '.join(id2sen(inp[1])))
+                #print(inp[1])
+                #print('key words ', sta_vec[1])
+                #print('generated:  '+' '.join(id2sen(st.cpu().numpy()[2,1])))
+                #print('generated:  ', st.cpu().numpy()[2,1])
+                #print(rewards.cpu().numpy()[2,1])
+                #print(temp.cpu().numpy()[2,1])
                 
                 sources = ' '.join(id2sen(inp[0]))
                 targetss = ' '.join(id2sen(st.cpu().numpy()[2,0]))
@@ -115,8 +114,9 @@ def testing(option, dataclass, forwardmodel = None, backwardmodel=None, embmodel
     similarityfun = similarity_keyword_bleu_tensor
 
     device = torch.device("cuda" if torch.cuda.is_available() and not option.no_cuda else "cpu")
+    agent = UPRL_T(option)
     #agent = UPRL_LM(option)
-    agent = UPRL_BERT(option)
+    #agent = UPRL_BERT(option)
     agent.to(device)
     if option.uprl_path is not None:
         with open(option.uprl_path, 'rb') as f:

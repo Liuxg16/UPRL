@@ -3,7 +3,8 @@ import torch.nn as nn
 import numpy as np
 import time, random
 from utils import *
-from bert_sim.score1 import Bert_sim
+from transformer.Models import Encoder, Decoder
+#from bert_sim.score1 import Bert_sim
 
 def reverse_input(input, sequence_length):
     batch_size=input.shape[0]
@@ -1109,4 +1110,247 @@ class UPRL_BERT(nn.Module):
     				weight.new_zeros(self.nlayers, bsz, self.nhid))
     	else:
     		return weight.new_zeros(self.nlayers, bsz, self.nhid)
+
+class UPRL_T(nn.Module):
+    def __init__(self, option):
+        super(UPRL_T, self).__init__()
+        self.option = option
+        self.length = 15
+        self.topk = option.topk
+        self.num_edits = option.num_edits
+        self.step_reward = option.step_reward
+        dropout = option.dropout
+        self.prate = option.prate
+        self.M_kw = option.M_kw
+        self.M_flu = option.M_flu
+        self.M_div = option.M_div
+        self.vocab_size = option.vocab_size
+        ninp = option.emb_size
+        nhid = option.hidden_size
+        self.hidden_size = option.hidden_size
+        self.nlayers = option.num_layers
+        self.drop = nn.Dropout(dropout)
+        # for transformer
+        n_src_vocab = self.vocab_size
+        len_max_seq = self.length
+        d_word_vec = ninp
+        d_model = self.hidden_size
+        d_inner = self.hidden_size
+        n_layers = self.nlayers
+        n_head = 8
+        d_k = 64 
+        d_v = 64
+        dropout = 0.1
+
+        self.source_encoder = Encoder(
+            n_src_vocab=n_src_vocab, len_max_seq=len_max_seq,
+            d_word_vec=d_word_vec, d_model=d_model, d_inner=d_inner,
+            n_layers=n_layers, n_head=n_head, d_k=d_k, d_v=d_v,
+            dropout=dropout)
+
+        self.decoder = Decoder(
+            n_tgt_vocab= n_src_vocab, len_max_seq=len_max_seq,
+            d_word_vec=d_word_vec, d_model=d_model, d_inner=d_inner,
+            n_layers=n_layers, n_head=n_head, d_k=d_k, d_v=d_v,
+            dropout=dropout)
+
+        self.mlp_del = nn.Linear(nhid+1+self.length, 1)
+        self.mlp_hold = nn.Linear(nhid+1+self.length, 1)
+
+        self.mlp_rep = nn.Linear(nhid+1+self.length, 100)
+        self.mlp_ins = nn.Linear(nhid+1+self.length, 100)
+        self.mlp1 = nn.Linear(ninp+2*self.topk,100)
+
+
+        self.embedding= nn.Embedding(self.vocab_size, ninp)
+
+        self.rnn = nn.LSTM(ninp*2+1, nhid, self.nlayers, dropout = dropout ,batch_first=True,\
+                bidirectional=True )
+
+        self.del_vec = nn.Parameter(torch.rand(1,1, ninp))
+        self.hold_vec = nn.Parameter(torch.rand(1,1, ninp))
+        self.repeat_size = option.repeat_size
+        self.num_actions = 300 #2*self.vocab_size+2
+        self.mlp = nn.Linear(2*nhid+1+self.length, 100)
+        self.nhid = nhid
+        self.device = torch.device("cuda" if torch.cuda.is_available() and not self.option.no_cuda else "cpu")
+
+    def forward(self, input, key_pos, sequence_length, forwardmodel, backwardmodel,embmodel, id2sen=None):
+        '''
+        bs,15; bs,14
+        '''
+
+        N_step = self.num_edits
+        self.batch_size = input.size(0)
+        s0 = input.clone()
+
+        seq_range =torch.arange(self.length).view(1,-1).long().to(self.device).repeat(self.batch_size,1) +1
+        seq_pos = seq_range* (torch.le(seq_range, sequence_length.view(-1,1))).long()
+
+        enc_output, *_ = self.source_encoder(input, seq_pos) # bs, l, d
+        st = input.clone()
+        length_t = sequence_length.clone()
+        pis = torch.zeros(self.batch_size,N_step).to(self.device)
+        actions = torch.zeros(self.batch_size,N_step).to(self.device)
+        self.switch_m = torch.FloatTensor(self.batch_size, 2).fill_(self.prate).to(self.device)
+        self.switch_m[:,1] = 1- self.prate
+        self.action_m = torch.FloatTensor(self.batch_size, 4*self.topk+2).fill_(1.0/(4*self.topk+2)).to(self.device)
+
+        for i in range(N_step): 
+            if N_step==self.length-2:
+                pos = i% (self.length-2)+1
+            elif N_step==self.length-3:
+                pos = i% (self.length-3)+2
+
+            st,pi, action, length_t , re= self.step(st,s0, enc_output, key_pos, pos,\
+                    length_t,seq_range,forwardmodel, backwardmodel, embmodel)
+            pis[:,i:i+1] = pi
+            actions[:,i:i+1] = action
+            #print('-----pos', pos)
+            #print(id2sen(st.cpu().numpy()[0]))
+            #print(id2sen(re.cpu().numpy()[0]))
+        step_reward = torch.sum(torch.eq(actions, 4*self.topk+1).float(),1) * self.step_reward # hold
+        fv0, sim, div, flu1  = self.f(s0,s0, key_pos, forwardmodel, backwardmodel, embmodel, sequence_length, sequence_length,
+                origin=True)
+        fvt, sim, div, flu2  = self.f(st,s0, key_pos, forwardmodel, backwardmodel, embmodel, length_t, sequence_length)
+        improve_flag = fvt/fv0
+        reward = (1.0/10)*improve_flag* torch.gt(improve_flag,1).float() + step_reward
+        #reward = torch.sum(actions,1)*0.1
+        reward = reward.detach() # bs,1
+        reward =  reward.view(self.repeat_size, -1) 
+        reward_adjust = nn.ReLU()(reward- torch.mean(reward,0, keepdim = True)) #rep,k
+        
+        sum_pi = torch.sum(-torch.log(torch.clamp(pis,1e-10,1-1e-10)),1, keepdim = True) # bs,1
+        loss = sum_pi*(reward_adjust.view(-1,1)) # bs,1
+        return loss, reward, st, flu1.detach(), flu2.detach()
+
+    def step(self, s_t_1, s0, enc_output, key_pos, pos, length_t, seq_range, forwardmodel,
+            backwardmodel, embmodel):
+
+        tgt_pos = seq_range * (torch.le(seq_range, length_t.view(-1,1))).long()
+        dec_output, *_ = self.decoder(s_t_1, tgt_pos, s0, enc_output) # bs,l,d
+        #pooled = nn.MaxPool1d(self.length)(output.permute(0,2,1)).squeeze(2) #batch,2h
+        pooled = dec_output[:,pos,:]
+        # 2*hid+1 +length
+        pos_tensor = torch.zeros(self.batch_size,self.length,1).to(self.device)
+        pos_tensor[:,pos,:] = 1
+        representation = torch.cat([pooled,key_pos[:,pos:pos+1], pos_tensor.squeeze(2)],1)
+        
+        rep_representation = self.mlp_rep(representation).unsqueeze(2)
+        ins_representation = self.mlp_ins(representation).unsqueeze(2)
+        del_representation = self.mlp_del(representation).unsqueeze(2)
+        hold_score = self.mlp_hold(representation)
+        del_score = self.mlp_del(representation)
+
+        rep_f_word, ins_f_word, _ = forwardmodel.predict(s_t_1,s0, pos, length_t, topk=self.topk) # bs,k
+        rep_b_word, ins_b_word, valid_id = backwardmodel.predict(s_t_1, s0, pos, length_t, forwardflag =
+            False, topk = self.topk) # bs,k
+        K = 2*self.topk
+        tag = torch.arange(K).view(-1,1).long()
+        onehot = torch.zeros(K,K).scatter_(1,tag,int(1)).to(self.device)
+        # bs,80
+        rep_words = torch.cat([rep_f_word, rep_b_word], 1)
+        ins_words = torch.cat([ins_f_word, ins_b_word], 1)
+
+        rep_emb = embmodel.encoder(rep_words).detach()
+        emb = torch.cat([rep_emb, onehot.unsqueeze(0).repeat(self.batch_size,1,1)],2) #bs,82,382
+        emb = self.mlp1(emb)
+        rep_score = torch.bmm(emb, rep_representation).squeeze(2) # bs,82,382; bs,382,1-> bs,82,1
+
+        ins_emb = embmodel.encoder(rep_words).detach()
+        emb = torch.cat([ins_emb, onehot.unsqueeze(0).repeat(self.batch_size,1,1)],2) #bs,82,382
+        emb = self.mlp1(emb)
+        ins_score = torch.bmm(emb, rep_representation).squeeze(2) # bs,82,382; bs,382,1-> bs,82,1
+        score = torch.cat([rep_score, ins_score, del_score, hold_score],1)
+        policy = nn.Softmax(1)(score) # bs,V
+
+        if self.training:
+            action = policy.multinomial(1)
+            explorate_flag = self.switch_m.multinomial(1)  # as edge_predict
+            action_explorate = self.action_m.multinomial(1)
+            action1 = action*explorate_flag + action_explorate*(1-explorate_flag)
+        else: 
+            values,action1 = torch.max(policy,1, keepdim=True)
+        action = action1.detach()
+        pi = torch.gather(policy, 1, action) # (b_s,1), \pi for i,j
+        
+        N_split = 2*self.topk
+        replaceflag = (torch.lt(action, N_split)*valid_id).long()
+        insertflag = torch.ge(action,N_split) * torch.lt(action, 2*N_split)
+        insertflag = (insertflag  * valid_id* torch.le(length_t+insertflag.long(),15)).long()
+        deleteflag = torch.eq(action,2*N_split)
+        deleteflag = (deleteflag *valid_id* torch.gt(length_t-deleteflag.long(),2)).long()
+        holdflag = 1- replaceflag -insertflag - deleteflag
+        
+        action_words = torch.gather(rep_words, 1, torch.clamp(action, 0,N_split-1).long())
+        rep = torch.cat([action_words, s_t_1[:,pos+1:]],1)
+        ins = torch.cat([action_words, s_t_1[:,pos:-1]],1)
+        padding = torch.ones(self.batch_size,1, device = ins.device, dtype = torch.long)*30003
+        dele = torch.cat([s_t_1[:,pos+1:], padding],1)
+        #print('rep, ins, del',pos, length_t, replaceflag, insertflag, deleteflag)
+
+        hol = s_t_1[:,pos:]
+        st = torch.clone(s_t_1)
+        st[:,pos:] =  (rep* replaceflag) + (ins * insertflag) +(dele*deleteflag )+ (hol * holdflag)
+        length_tt = insertflag+length_t-deleteflag
+
+        return st, pi, action, length_tt, rep_words
+    
+    def f(self, st,s0, key_pos, forwardmodel=None, backwardmodel=None,  embmodel=None, sequence_length =None, original_length=None,
+            origin = False):
+        # bs,l; bs,l; bs, l
+        e=1e-50
+        emb0 = embmodel.encoder(s0)
+        embt = embmodel.encoder(st).permute(0,2,1)
+        emb_mat = torch.bmm(emb0,embt) # K,l,l
+        norm0 = 1/(torch.norm(emb0,p= 2,dim=2)+e) # K,l
+        normt = 1/(torch.norm(embt,p= 2,dim=1)+e) # K,l
+        norm0 = torch.diag_embed(norm0) # K,15,15
+        normt = torch.diag_embed(normt) # k,l,l
+        sim_mat = torch.bmm(torch.bmm(norm0, emb_mat), normt) # K,l,l
+        sim_vec,_ = torch.max(sim_mat,2)  # K,l
+        sim,_ = torch.min(sim_vec*key_pos+ (1-key_pos),1)
+        sim = sim**self.M_kw
+
+        stt = st+1
+        s00 = s0+1
+
+        align_t = stt* torch.cat([stt[:,1:],stt[:,0:1]],1) # bs,l
+        align_0 = s00* torch.cat([s00[:,1:],s00[:,0:1]],1) #bs,l
+        align_t = align_t +  torch.gt(align_t,900000000).long()*1e9
+        align_t = align_t.unsqueeze(1).repeat(1,self.length,1)
+        align_0 = align_0.unsqueeze(2).repeat(1,1,self.length)
+        align = torch.sum(torch.sum(torch.eq(align_t,align_0).float(),1),1)
+        expression_diversity = torch.clamp(1-(align/original_length.float().view(-1)),0.05,1)+0.2
+        expression_diversity = expression_diversity**self.M_div
+
+        if True:
+            prod_prob = forwardmodel.prod_prob(st).squeeze(2) # bs,l, 1
+            fluency =\
+                    -torch.sum(torch.log(torch.clamp(prod_prob,1e-50)),1)/sequence_length.squeeze(1).float()
+
+            st_back = reverse_input(st.cpu(), sequence_length.cpu()).to(self.device)
+            prod_prob_back = backwardmodel.prod_prob(st_back).squeeze(2) # bs,l, 1
+            fluency_back =\
+                    -torch.sum(torch.log(torch.clamp(prod_prob_back,1e-50)),1)/sequence_length.squeeze(1).float()
+            fluency = (1/torch.clamp(fluency+fluency_back, 0,100) )**self.M_flu
+            if origin:
+                fluencyflag = torch.lt(fluency,1e20).float()
+            else:
+                fluencyflag = torch.lt(fluency,10).float()
+            res = sim * expression_diversity * fluencyflag *fluency +\
+                     sim * expression_diversity * (1-fluencyflag)*0.01*fluency
+        else:
+            res = sim * expression_diversity
+        return res, sim, expression_diversity, fluency
+
+
+    def init_hidden(self, bsz):
+    	weight = next(self.parameters())
+    	if self.rnn_type == 'LSTM':
+    		return (weight.new_zeros(self.nlayers, bsz, self.nhid),
+    				weight.new_zeros(self.nlayers, bsz, self.nhid))
+    	else:
+    		return weight.new_zeros(self.nlayers, bsz, self.nhid)
+
   
