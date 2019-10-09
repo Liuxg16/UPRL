@@ -19,7 +19,8 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmod
     similarityfun = similarity_keyword_bleu_tensor
 
     device = torch.device("cuda" if torch.cuda.is_available() and not option.no_cuda else "cpu")
-    agent = UPRL_LM(option)
+    #agent = UPRL_LM(option)
+    agent = UPRL_BERT(option)
     agent.to(device)
     if option.uprl_path is not None:
         with open(option.uprl_path, 'rb') as f:
@@ -40,7 +41,7 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmod
     avg_rewards = []
     print('number of samples ', use_data.length) 
     intervals = 10
-    num_epoch = 10
+    num_epoch = 100
     for ba in range(0,1000000):
         if ba % intervals == 0:
             agent.eval()
@@ -63,9 +64,9 @@ def simulatedAnnealing_batch(option, dataclass, forwardmodel = None, backwardmod
             input = input.view(option.repeat_size*batch_size,-1).to(device)
             poskeys = poskeys.view(option.repeat_size*batch_size,-1).to(device)
             sequence_length = sequence_length.view(option.repeat_size*batch_size,-1).to(device)
-
             loss, rewards, st , temp, temp2 = agent(input, poskeys, sequence_length, forwardmodel,
-                    backwardmodel, embmodel) # bs,15; bs,steps
+                backwardmodel, embmodel, id2sen) # bs,15; bs,steps
+
             loss = torch.mean(loss)
             if i  == num_epoch-1:
                 st = st.view(option.repeat_size,batch_size, -1)
@@ -114,7 +115,8 @@ def testing(option, dataclass, forwardmodel = None, backwardmodel=None, embmodel
     similarityfun = similarity_keyword_bleu_tensor
 
     device = torch.device("cuda" if torch.cuda.is_available() and not option.no_cuda else "cpu")
-    agent = UPRL_LM(option)
+    #agent = UPRL_LM(option)
+    agent = UPRL_BERT(option)
     agent.to(device)
     if option.uprl_path is not None:
         with open(option.uprl_path, 'rb') as f:
